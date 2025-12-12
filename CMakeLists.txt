@@ -41,12 +41,7 @@ endif()
 message(STATUS "ONNX Runtime 包含目录: ${ONNXRUNTIME_INCLUDE_DIR}")
 message(STATUS "ONNX Runtime 库目录: ${ONNXRUNTIME_LIB_DIR}")
 
-# ==================== 包含目录 ====================
-include_directories(
-        ${OpenCV_INCLUDE_DIRS}
-        ${ONNXRUNTIME_INCLUDE_DIR}
-        "${CMAKE_SOURCE_DIR}/include"
-)
+
 
 # ==================== 链接目录 ====================
 link_directories(
@@ -64,13 +59,17 @@ file(GLOB SOURCES
 # ==================== 创建可执行文件 ====================
 add_executable(yolo_detector ${SOURCES})
 
+# ==================== 设置包含目录 ====================
+target_include_directories(yolo_detector PRIVATE
+        "${CMAKE_SOURCE_DIR}/include"
+        ${ONNXRUNTIME_INCLUDE_DIR}
+        ${OpenCV_INCLUDE_DIRS}
+)
 # ==================== 链接库 ====================
-# 首先链接 OpenCV 库
-target_link_libraries(yolo_detector ${OpenCV_LIBS})
-
-# 然后链接 ONNX Runtime 库
+# ==================== 链接库 ====================
 target_link_libraries(yolo_detector
-        onnxruntime.lib
+        ${OpenCV_LIBS}
+        onnxruntime. lib
 )
 
 message(STATUS "✓ 链接 OpenCV 和 ONNX Runtime 库")

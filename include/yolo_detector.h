@@ -1,103 +1,68 @@
-#ifndef YOLO_DETECTOR_H
-#define YOLO_DETECTOR_H
-
+#pragma once
+#include <string>
+#include <vector>
 #include <opencv2/opencv.hpp>
 #include <onnxruntime_cxx_api.h>
-#include <vector>
-#include <string>
-#include <memory>
 
-// 检测结果结构
+// 单个检测结果
 struct Detection {
-    cv::Rect box;           // 边界框
-    float confidence;       // 置信度
-    int class_id;          // 类别ID
-    std::string class_name; // 类别名称
+    cv::Rect2f box;   // xyxy
+    int class_id;
+    float score;
 };
 
-// YOLO 检测器类
-class YOLODetector {
+class YoloDetector {
 public:
-    /**
-     * 构造函数
-     * @param model_path ONNX模型路径
-     * @param conf_threshold 置信度阈值
-     * @param iou_threshold NMS的IOU阈值
-     * @param class_names 类别名称列表
-     * @param use_cuda 是否使用CUDA加速
-     */
-    YOLODetector(
-        const std::string& model_path,
-        float conf_threshold = 0.25f,
-        float iou_threshold = 0.45f,
-        const std::vector<std::string>& class_names = {},
-        bool use_cuda = true
-    );
+    struct Config {
+        std::string model_path;
+        int input_w = 640;
+        int input_h = 640;
+        int num_classes = 80;
+        float conf_thresh = 0.25f;
+        float iou_thresh = 0.45f;
+        bool letterbox = true;   // 保持比例填充
+        bool use_cpu = true;     // 仅 CPU 推理；如需 GPU 可后续扩展 EP
+    };
 
-    /**
-     * 析构函数
-     */
-    ~YOLODetector();
+    explicit YoloDetector(const Config& cfg);
+    ~YoloDetector() = default;
 
-    /**
-     * 检测图像中的目标
-     * @param image 输入图像
-     * @param inference_time 输出推理时间(ms)
-     * @return 检测结果列表
-     */
-    std::vector<Detection> detect(const cv::Mat& image, float& inference_time);
-
-    /**
-     * 在图像上绘制检测结果
-     * @param image 输入图像
-     * @param detections 检测结果
-     * @return 绘制后的图像
-     */
-    cv::Mat drawDetections(const cv::Mat& image, const std::vector<Detection>& detections);
-
-    /**
-     * 获取模型输入尺寸
-     */
-    cv::Size getInputSize() const { return cv::Size(input_width_, input_height_); }
+    // 对单张图像进行检测
+    std::vector<Detection> detect(const cv::Mat& bgr_image);
 
 private:
-    // ONNX Runtime 相关
-    Ort::Env env_;
-    Ort::Session session_;
-    Ort::AllocatorWithDefaultOptions allocator_;
-    Ort::MemoryInfo memory_info_;
+    Config cfg_;
 
+    // ORT
+    Ort::Env env_;
+    Ort::SessionOptions session_options_;
+    std::unique_ptr<Ort::Session> session_;
+    Ort::MemoryInfo memory_info_;
+    std::vector<std::string> input_name_storage_;
+    std::vector<std::string> output_name_storage_;
     std::vector<const char*> input_names_;
     std::vector<const char*> output_names_;
-    std::vector<int64_t> input_shape_;
 
-    // 模型参数
-    int input_width_;
-    int input_height_;
-    float conf_threshold_;
-    float iou_threshold_;
-    std::vector<std::string> class_names_;
+    // 预处理：BGR -> RGB，resize/letterbox，归一化，NCHW
+    struct PreprocResult {
+        cv::Mat processed;   // 预处理后图像（RGB）
+        float scale;         // 缩放比例
+        int pad_w;           // 左右总填充
+        int pad_h;           // 上下总填充
+    };
+    PreprocResult preprocess(const cv::Mat& bgr) const;
 
-    // 图像信息
-    int orig_width_;
-    int orig_height_;
-    float ratio_;
-    float dw_;
-    float dh_;
+    // 后处理：从输出张量解析框，映射回原图坐标，做 NMS
+    std::vector<Detection> postprocess(const cv::Size& orig_size,
+                                       float scale, int pad_w, int pad_h,
+                                       const float* output, const std::vector<int64_t>& shape) const;
 
-    // 私有方法
-    void initializeModel(const std::string& model_path, bool use_cuda);
-    cv::Mat letterbox(const cv::Mat& image);
-    std::vector<float> preprocess(const cv::Mat& image);
-    std::vector<Detection> postprocess(const std::vector<Ort::Value>& outputs);
+    // NMS
+    static std::vector<int> nms_indices(const std::vector<cv::Rect2f>& boxes,
+                                        const std::vector<float>& scores,
+                                        float iou_thresh);
 
-    void xywh2xyxy(float* boxes, int num_boxes);
-    void scaleBoxes(std::vector<cv::Rect>& boxes);
-    std::vector<int> nms(const std::vector<cv::Rect>& boxes,
-                         const std::vector<float>& scores,
-                         float iou_threshold);
-
-    static cv::Scalar getColor(int class_id);
-};
-
-#endif // YOLO_DETECTOR_H
+    // 辅助：获取输出形状
+    static std::vector<int64_t> get_tensor_shape(const Ort::Value& val);
+}
+;
