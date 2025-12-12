@@ -11,7 +11,6 @@ YOLODetector::YOLODetector(
     const std::vector<std::string>& class_names,
     bool use_cuda
 ) : env_(ORT_LOGGING_LEVEL_WARNING, "YOLOv12"),
-    session_(nullptr),
     memory_info_(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)),
     conf_threshold_(conf_threshold),
     iou_threshold_(iou_threshold),
@@ -64,18 +63,18 @@ void YOLODetector::initializeModel(const std::string& model_path, bool use_cuda)
 #ifdef _WIN32
     // Windows: 需要转换为宽字符
     std::wstring model_path_w(model_path.begin(), model_path.end());
-    session_ = Ort::Session(env_, model_path_w.c_str(), session_options);
+    session_ = std::make_unique<Ort::Session>(env_, model_path_w.c_str(), session_options);
 #else
-    session_ = Ort::Session(env_, model_path.c_str(), session_options);
+    session_ = std::make_unique<Ort::Session>(env_, model_path.c_str(), session_options);
 #endif
 
     // 获取输入信息
-    size_t num_input_nodes = session_.GetInputCount();
+    size_t num_input_nodes = session_->GetInputCount();
     for (size_t i = 0; i < num_input_nodes; i++) {
-        auto input_name = session_.GetInputNameAllocated(i, allocator_);
+        auto input_name = session_->GetInputNameAllocated(i, allocator_);
         input_names_.push_back(input_name.get());
 
-        auto type_info = session_.GetInputTypeInfo(i);
+        auto type_info = session_->GetInputTypeInfo(i);
         auto tensor_info = type_info.GetTensorTypeAndShapeInfo();
         input_shape_ = tensor_info.GetShape();
     }
@@ -84,9 +83,9 @@ void YOLODetector::initializeModel(const std::string& model_path, bool use_cuda)
     input_height_ = static_cast<int>(input_shape_[2]);
 
     // 获取输出信息
-    size_t num_output_nodes = session_.GetOutputCount();
+    size_t num_output_nodes = session_->GetOutputCount();
     for (size_t i = 0; i < num_output_nodes; i++) {
-        auto output_name = session_.GetOutputNameAllocated(i, allocator_);
+        auto output_name = session_->GetOutputNameAllocated(i, allocator_);
         output_names_.push_back(output_name.get());
     }
 
@@ -175,7 +174,7 @@ std::vector<Detection> YOLODetector::detect(const cv::Mat& image, float& inferen
 
     // 推理
     Timer infer_timer;
-    auto output_tensors = session_.Run(
+    auto output_tensors = session_->Run(
         Ort::RunOptions{nullptr},
         input_names_.data(),
         &input_tensor_ort,
