@@ -63,7 +63,7 @@ public:
 private:
     // ONNX Runtime 相关
     Ort::Env env_;
-    Ort::Session session_;
+    std::unique_ptr<Ort::Session> session_;
     Ort::AllocatorWithDefaultOptions allocator_;
     Ort::MemoryInfo memory_info_;
 
