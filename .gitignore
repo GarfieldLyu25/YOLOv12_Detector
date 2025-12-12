@@ -1,0 +1,7 @@
+cmake-build/debug
+deps
+/.venv/
+/cmake-build-debug/
+/build/
+/model/
+.idea
